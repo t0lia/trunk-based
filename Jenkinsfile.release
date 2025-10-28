@@ -134,9 +134,13 @@ pipeline {
                 script {
                     echo 'Pushing version changes and tag to repository...'
 
+                    // Determine the target branch
+                    def targetBranch = env.BRANCH_NAME ?: 'master'
+                    echo "Target branch: ${targetBranch}"
+
                     // Push using the same credentials as checkout
                     withCredentials([gitUsernamePassword(credentialsId: 'github-token')]) {
-                        sh "git push origin HEAD:${env.BRANCH_NAME}"
+                        sh "git push origin HEAD:refs/heads/${targetBranch}"
                         sh "git push origin v${env.NEW_VERSION}"
                     }
                 }
