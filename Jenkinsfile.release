@@ -121,6 +121,9 @@ pipeline {
                     sh 'git add pom.xml app/pom.xml'
                     sh "git commit -m 'Release version ${env.NEW_VERSION}'"
 
+                    // Delete tag if it exists locally (from failed previous runs)
+                    sh "git tag -d v${env.NEW_VERSION} 2>/dev/null || true"
+
                     // Create the tag
                     sh "git tag -a v${env.NEW_VERSION} -m 'Release version ${env.NEW_VERSION}'"
 
