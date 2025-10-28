@@ -2,7 +2,6 @@ pipeline {
     agent {
         docker {
             image 'eclipse-temurin:21-jdk'
-            args '-v /root/.gitconfig:/root/.gitconfig:ro'
         }
     }
 
@@ -135,9 +134,8 @@ pipeline {
                 script {
                     echo 'Pushing version changes and tag to repository...'
 
-                    // This requires proper git credentials configuration in Jenkins
-                    // You may need to use Jenkins credentials plugin
-                    withCredentials([gitUsernamePassword(credentialsId: 'git-credentials')]) {
+                    // Push using the same credentials as checkout
+                    withCredentials([gitUsernamePassword(credentialsId: 'github-token')]) {
                         sh "git push origin HEAD:${env.BRANCH_NAME}"
                         sh "git push origin v${env.NEW_VERSION}"
                     }
@@ -161,9 +159,6 @@ pipeline {
         failure {
             echo 'Release failed!'
             echo 'Version changes and tags have not been pushed.'
-        }
-        cleanup {
-            cleanWs()
         }
     }
 }
