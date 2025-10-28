@@ -1,13 +1,9 @@
 pipeline {
     agent {
         docker {
-            image 'eclipse-temurin:21-jdk'
+            image 'maven:3.9-eclipse-temurin-21'
             args '-v $HOME/.m2:/root/.m2'
         }
-    }
-
-    environment {
-        MAVEN_OPTS = '-Dmaven.repo.local=$HOME/.m2/repository'
     }
 
     stages {
@@ -21,15 +17,14 @@ pipeline {
         stage('Build') {
             steps {
                 echo 'Building the project...'
-                sh 'chmod +x ./mvnw'
-                sh './mvnw clean compile -DskipTests'
+                sh 'mvn clean compile -DskipTests'
             }
         }
 
         stage('Test') {
             steps {
                 echo 'Running tests...'
-                sh './mvnw test'
+                sh 'mvn test'
             }
             post {
                 always {
@@ -41,7 +36,7 @@ pipeline {
         stage('Package') {
             steps {
                 echo 'Packaging the application...'
-                sh './mvnw package -DskipTests'
+                sh 'mvn package -DskipTests'
             }
         }
 
@@ -59,9 +54,6 @@ pipeline {
         }
         failure {
             echo 'Build failed!'
-        }
-        always {
-            cleanWs()
         }
     }
 }
