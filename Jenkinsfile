@@ -2,12 +2,13 @@ pipeline {
     agent {
         docker {
             image 'eclipse-temurin:21-jdk'
-            args '-v $HOME/.m2:/root/.m2'
+            // Remove the args line that's causing the issue
+            // args '-v $HOME/.m2:/root/.m2'
         }
     }
 
     environment {
-        MAVEN_OPTS = '-Dmaven.repo.local=$HOME/.m2/repository'
+        MAVEN_OPTS = '-Dmaven.repo.local=/root/.m2/repository'
     }
 
     stages {
