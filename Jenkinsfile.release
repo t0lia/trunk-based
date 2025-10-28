@@ -1,0 +1,169 @@
+pipeline {
+    agent {
+        docker {
+            image 'eclipse-temurin:21-jdk'
+            args '-v /root/.gitconfig:/root/.gitconfig:ro'
+        }
+    }
+
+    parameters {
+        choice(
+            name: 'VERSION_TYPE',
+            choices: ['patch', 'minor', 'major'],
+            description: 'Select version bump type'
+        )
+    }
+
+    environment {
+        MAVEN_OPTS = '-Dmaven.repo.local=/root/.m2/repository'
+        GIT_AUTHOR_NAME = 'Jenkins'
+        GIT_AUTHOR_EMAIL = 'jenkins@ci.local'
+        GIT_COMMITTER_NAME = 'Jenkins'
+        GIT_COMMITTER_EMAIL = 'jenkins@ci.local'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                echo 'Checking out code...'
+                checkout scm
+                script {
+                    // Ensure git is configured
+                    sh 'git config user.name "Jenkins"'
+                    sh 'git config user.email "jenkins@ci.local"'
+                }
+            }
+        }
+
+        stage('Calculate Version') {
+            steps {
+                script {
+                    echo "Calculating new ${params.VERSION_TYPE} version..."
+
+                    // Get the latest tag, if any
+                    def latestTag = sh(
+                        script: 'git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0"',
+                        returnStdout: true
+                    ).trim()
+
+                    echo "Latest tag: ${latestTag}"
+
+                    // Remove 'v' prefix if present
+                    def currentVersion = latestTag.replaceFirst(/^v/, '')
+
+                    // Parse version components
+                    def versionParts = currentVersion.tokenize('.')
+                    def major = versionParts.size() > 0 ? versionParts[0].toInteger() : 0
+                    def minor = versionParts.size() > 1 ? versionParts[1].toInteger() : 0
+                    def patch = versionParts.size() > 2 ? versionParts[2].toInteger() : 0
+
+                    // If no previous tag exists, start with 1.0.0
+                    if (latestTag == '0.0.0') {
+                        major = 1
+                        minor = 0
+                        patch = 0
+                    } else {
+                        // Bump version based on parameter
+                        switch(params.VERSION_TYPE) {
+                            case 'major':
+                                major++
+                                minor = 0
+                                patch = 0
+                                break
+                            case 'minor':
+                                minor++
+                                patch = 0
+                                break
+                            case 'patch':
+                                patch++
+                                break
+                        }
+                    }
+
+                    env.NEW_VERSION = "${major}.${minor}.${patch}"
+                    echo "New version will be: ${env.NEW_VERSION}"
+                }
+            }
+        }
+
+        stage('Update POM Version') {
+            steps {
+                echo "Updating POM files to version ${env.NEW_VERSION}..."
+                sh 'chmod +x ./mvnw'
+                sh "./mvnw versions:set -DnewVersion=${env.NEW_VERSION} -DgenerateBackupPoms=false"
+            }
+        }
+
+        stage('Build and Test') {
+            steps {
+                echo 'Building and testing with new version...'
+                sh './mvnw clean test'
+            }
+            post {
+                always {
+                    junit '**/target/surefire-reports/*.xml'
+                }
+            }
+        }
+
+        stage('Package') {
+            steps {
+                echo 'Packaging the application...'
+                sh './mvnw package -DskipTests'
+            }
+        }
+
+        stage('Create Git Tag') {
+            steps {
+                script {
+                    echo "Creating git tag v${env.NEW_VERSION}..."
+
+                    // Commit the version changes
+                    sh 'git add pom.xml app/pom.xml'
+                    sh "git commit -m 'Release version ${env.NEW_VERSION}'"
+
+                    // Create the tag
+                    sh "git tag -a v${env.NEW_VERSION} -m 'Release version ${env.NEW_VERSION}'"
+
+                    echo "Tag v${env.NEW_VERSION} created successfully"
+                }
+            }
+        }
+
+        stage('Push Changes') {
+            steps {
+                script {
+                    echo 'Pushing version changes and tag to repository...'
+
+                    // This requires proper git credentials configuration in Jenkins
+                    // You may need to use Jenkins credentials plugin
+                    withCredentials([gitUsernamePassword(credentialsId: 'git-credentials')]) {
+                        sh "git push origin HEAD:${env.BRANCH_NAME}"
+                        sh "git push origin v${env.NEW_VERSION}"
+                    }
+                }
+            }
+        }
+
+        stage('Archive') {
+            steps {
+                echo 'Archiving release artifacts...'
+                archiveArtifacts artifacts: '**/target/*.jar', fingerprint: true
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Release ${env.NEW_VERSION} completed successfully!"
+            echo "Tag v${env.NEW_VERSION} has been created and pushed."
+        }
+        failure {
+            echo 'Release failed!'
+            echo 'Version changes and tags have not been pushed.'
+        }
+        cleanup {
+            cleanWs()
+        }
+    }
+}
